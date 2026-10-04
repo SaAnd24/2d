@@ -7,6 +7,9 @@ on:
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,3 +43,48 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Preparar Gradle wrapper
+        working-directory: ${{ steps.src.outputs.root }}
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version 8.7 --no-daemon
+          fi
+          chmod +x gradlew || true
+
+      - name: Compilar APK debug
+        working-directory: ${{ steps.src.outputs.root }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Localizar APK
+        id: apk
+        run: |
+          APK=$(find "${{ steps.src.outputs.root }}/app/build/outputs/apk/debug" -name '*.apk' | head -n 1)
+          test -n "$APK"
+          cp "$APK" JuegoTerror2D-debug.apk
+          ls -l JuegoTerror2D-debug.apk
+          echo "path=JuegoTerror2D-debug.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar APK como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JuegoTerror2D-debug-apk
+          path: JuegoTerror2D-debug.apk
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Publicar APK en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          files: JuegoTerror2D-debug.apk
+
+      - name: Tests unitarios
+        working-directory: ${{ steps.src.outputs.root }}
+        run: ./gradlew testDebugUnitTest --stacktrace
